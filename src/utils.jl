@@ -70,7 +70,6 @@ end
 
 # make data
 
-
 """
     make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
 
@@ -274,20 +273,20 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Bool, Vector{T}}=false,
-    G::Union{Bool, Matrix{U}}=false, i₀::Union{Bool, Matrix{U}}=false, 
-    sky::Union{Bool, Matrix{U}}=false) where {T<:WT.OrthoWaveletClass, U<:Real}
+function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
+    G::Union{Nothing, Matrix{U}}=nothing, i₀::Union{Nothing, Matrix{U}}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
     
     # init
 
-    (wlts == false) || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     βₚ = zeros((size(i)...,(length(wlts))...))
     α = βₚ
     tₚ = 1
     H_adj = adj(H)
     
-    (G == false) || (G_adj = adj(G))
-    (sky == false) || (mse = Float64[])
+    (G == nothing) || (G_adj = adj(G))
+    (sky == nothing) || (mse = Float64[])
 
     @showprogress 1 "Computing..." for k in 1:n_iter
 
@@ -295,7 +294,7 @@ function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float6
 
         i_ = dwt_decomp_adj(α, wlts)
         u = imfilter(imfilter(i_, H) - i, H_adj)
-        (G == false) || (u += imfilter(imfilter(i_ - i₀, G), G_adj))
+        (G == nothing) || (u += imfilter(imfilter(i_ - i₀, G), G_adj))
         ∇f = 2*dwt_decomp(u, wlts)
 
         # apply prox
@@ -307,12 +306,12 @@ function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float6
         βₚ = β
         tₚ = t
 
-        if sky ≠ false & mod(k, 10) == 0
+        if sky ≠ nothing 
             push!(mse, norm(sky - dwt_decomp_adj(α, wlts)))
         end
 
     end
-    sky ≠ false ? (return dwt_decomp_adj(α, wlts), mse) : (return dwt_decomp_adj(α, wlts))
+    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), mse) 
 end
 
 # compute step
@@ -323,18 +322,18 @@ end
 Compute the optimal gradient step when applying FISTA to
     minₓ ||i - H⋅wlts⋅x||² + ||G⋅(i₀ - wlt⋅x)||² + λ||x||₁ 
 """
-function compute_step(H::Matrix{U};  wlts::Union{Bool, Vector{T}}=false, G::Union{Bool, Matrix{U}}=false, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
+function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Matrix{U}}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
-    (wlts == false) || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     α = randn(size(H)...,length(wlts)...)
     H_adj = adj(H)
-    (G == false) || (G_adj = adj(G))
+    (G == nothing) || (G_adj = adj(G))
 
     for n in 1:n_iter
 
         i_ = dwt_decomp_adj(α, wlts)
         u = imfilter(H_adj, imfilter(H, i_))        
-        (G == false) || (u += imfilter(G_adj, imfilter(G, i_)))
+        (G == nothing) || (u += imfilter(G_adj, imfilter(G, i_)))
         α_ = dwt_decomp(u, wlts)
         α = α_/norm(α_)
 
@@ -342,7 +341,7 @@ function compute_step(H::Matrix{U};  wlts::Union{Bool, Vector{T}}=false, G::Unio
 
     i_ = dwt_decomp_adj(α, wlts)
     u = imfilter(H_adj, imfilter(H, i_))        
-    (G == false) || (u += imfilter(G_adj, imfilter(G, i_)))
+    (G == nothing) || (u += imfilter(G_adj, imfilter(G, i_)))
     α_ = dwt_decomp(u, wlts)
 
     1/(2*dot(α,  α_))
