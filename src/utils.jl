@@ -74,9 +74,11 @@ end
 """
     make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
 
-makes the synthetic bases
-- n_ants: number of antennas
-- n_pix: number of pixels (gridded!)
+makes the synthetic bases. The bases are grided inside the square 
+    (-n\\_pix/2 ... n\\_pix/2) × (-n\\_pix/2 ... n\\_pix/2) 
+
+- n\\_ants: number of antennas
+- n\\_pix: number of pixels 
 - compress coefficient shrinks all the bases by a factor compress
 """
 function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0) 
@@ -278,7 +280,7 @@ function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float6
     
     # init
 
-    wlts || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    (wlts == false) || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     βₚ = zeros((size(i)...,(length(wlts))...))
     α = βₚ
     tₚ = 1
@@ -323,7 +325,7 @@ Compute the optimal gradient step when applying FISTA to
 """
 function compute_step(H::Matrix{U};  wlts::Union{Bool, Vector{T}}=false, G::Union{Bool, Matrix{U}}=false, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
-    wlts || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    (wlts == false) || (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     α = randn(size(H)...,length(wlts)...)
     H_adj = adj(H)
     (G == false) || (G_adj = adj(G))
