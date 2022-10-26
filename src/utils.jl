@@ -82,6 +82,7 @@ makes the synthetic bases. The bases are grided inside the square
 """
 function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0) 
 
+    @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
     # make bases from random gridded antennas
 
     pos_ants = randn(n_ants, 2)
@@ -202,6 +203,7 @@ convolution after zero padding by half the width
 """
 function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
+    @assert size(img) == size(psf) "Image and psf must have the same size"
     n, = size(img)
     np = Int(n/2)
 
