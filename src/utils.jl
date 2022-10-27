@@ -101,6 +101,16 @@ function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
     return bases
 end
 
+function make_bases(filename::String, n_pix::Int; compress::Float64=1.0) 
+
+
+    @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
+    # make bases from random gridded antennas
+
+    bases = readdlm(filename, skipstart=6)
+    round.(Int, compress*n_pix*bases/maximum(abs.(bases))/2)
+
+end
 
 """
     make_psf(bases::Matrix{Int}, n_pix::Int,  ℓ::Float64)
