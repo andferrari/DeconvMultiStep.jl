@@ -12,12 +12,12 @@ function imshow_psf(x; zoom=1, title="")
     x, xlims=(-zoom, zoom), ylims=(-zoom, zoom), title = title, cbar = true, yflip=true, ratio=1)
 end
 
-imshow(x; title="") = heatmap(x, c=:grays, border = :none, title = title, cbar = false, yflip=true, ratio=1)
+imshow(x; title="") = heatmap(x, border = :none, title = title, yflip=true, ratio=1, cbar=false)
 snr(x, xₑ) = round(20*log10(norm(x)/norm(x-xₑ)), digits=3)
 
 # structures
 
-struct PSF{T <: Matrix{<:Real}}
+mutable struct PSF{T <: Matrix{<:Real}}
     full::T 
     low::T
     high::T
@@ -35,7 +35,7 @@ struct PSF{T <: Matrix{<:Real}}
 end
 
 
-struct Dirty{T <: Matrix{<:Real}}
+mutable struct Dirty{T <: Matrix{<:Real}}
     full::T
     low::T
     high::T 
@@ -51,7 +51,7 @@ struct Dirty{T <: Matrix{<:Real}}
     end
 end
 
-struct UV
+mutable struct UV
     full::Matrix{Bool} 
     low::Matrix{Bool} 
     high::Matrix{Bool} 
@@ -101,13 +101,25 @@ function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
     return bases
 end
 
+"""
+    make_bases(filename::String, n_pix::Int; compress::Float64=1.0)
+
+    makes the bases from a file. The bases are grided inside the square 
+        (-n\\_pix/2 ... n\\_pix/2) × (-n\\_pix/2 ... n\\_pix/2) 
+    
+    - n\\_ants: number of antennas
+    - n\\_pix: number of pixels 
+    - compress coefficient shrinks all the bases by a factor compress
+
+    6 lines of header are skipped in filename
+"""
 function make_bases(filename::String, n_pix::Int; compress::Float64=1.0) 
 
 
     @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
     # make bases from random gridded antennas
 
-    bases = readdlm(filename, skipstart=6)
+    bases = readdlm(filename, skipstart=6)[:, 1:2]
     round.(Int, compress*n_pix*bases/maximum(abs.(bases))/2)
 
 end
