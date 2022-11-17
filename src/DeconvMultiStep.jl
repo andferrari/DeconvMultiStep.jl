@@ -1,6 +1,6 @@
 module DeconvMultiStep
 
-using Plots
+using CairoMakie
 using FFTW
 using LinearAlgebra
 using Wavelets
@@ -11,6 +11,6 @@ using DelimitedFiles
 include("utils.jl")
 
 export make_psf, make_bases, make_dirty, compute_step, fista, low_pass, snr
-export imshow_uv, imshow_psf, imshow
+export plot_psf, plot_dirty, plot_deconv
 
 end # module DeconvMultiStep

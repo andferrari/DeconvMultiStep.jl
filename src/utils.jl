@@ -1,20 +1,3 @@
-# plot functions
-
-function imshow_uv(x; title="") 
-    nx, ny  =size(x)
-    heatmap(LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny), 
-    x, c=:grays, xlims = (-nx/2, nx/2), ylims=(-ny/2, ny/2), title = title, cbar = false, yflip=true, ratio=1)
-end
-
-function imshow_psf(x; zoom=1, title="") 
-    nx, ny  =size(x)
-    heatmap(LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny), 
-    x, xlims=(-zoom, zoom), ylims=(-zoom, zoom), title = title, cbar = true, yflip=true, ratio=1)
-end
-
-imshow(x; title="") = heatmap(x, border = :none, title = title, yflip=true, ratio=1, cbar=false)
-snr(x, xₑ) = round(20*log10(norm(x)/norm(x-xₑ)), digits=3)
-
 # structures
 
 mutable struct PSF{T <: Matrix{<:Real}}
@@ -68,10 +51,113 @@ mutable struct UV
     end
 end
 
+# plot functions
+
+snr(x, xₑ) = round(20*log10(norm(x)/norm(x-xₑ)), digits=3)
+
+
+function plot_psf(psf::PSF, uv::UV; zoom = 1.0)
+
+    nx, ny  =size(psf.full)
+    lx, ly = LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny)
+
+    fig = Figure(resolution = (600, 800))
+    ax = [Axis(fig[i, j], aspect=DataAspect()) for i in 1:3, j in 1:2]
+
+    heatmap!(ax[1,1], lx, ly, uv.full, colormap=["white", "black"])
+    hidedecorations!.(ax[1,1])
+    ax[1,1].title="UV full"
+    hm1 = heatmap!(ax[1,2], lx, ly, psf.full)
+    xlims!(ax[1,2], -zoom, zoom)
+    ylims!(ax[1,2], -zoom, zoom)
+    ax[1,2].title="PSF full"
+    Colorbar(fig[1, 3], hm1)
+
+    heatmap!(ax[2,1], lx, ly, uv.low, colormap=["white", "black"])
+    hidedecorations!.(ax[2,1])
+    ax[1,1].title="UV low"
+    hm2 = heatmap!(ax[2,2], lx, ly, psf.low)
+    xlims!(ax[2,2], -zoom, zoom)
+    ylims!(ax[2,2], -zoom, zoom)
+    ax[2,2].title="PSF low"
+    Colorbar(fig[2, 3], hm2)
+
+    heatmap!(ax[3,1], lx, ly, uv.high, colormap=["white", "black"])
+    hidedecorations!.(ax[3,1])
+    ax[1,1].title="UV high"
+    hm3 = heatmap!(ax[3,2], lx, ly, psf.high)
+    xlims!(ax[3,2], -zoom, zoom)
+    ylims!(ax[3,2], -zoom, zoom)
+    ax[3,2].title="PSF high"
+    Colorbar(fig[3, 3], hm3)
+
+    fig
+end
+
+function plot_dirty(dirty::Dirty, sky::Matrix{T}) where  {T<:Real}
+
+    fig = Figure(resolution = (800, 700))
+    ax = [Axis(fig[i, j], aspect=DataAspect()) for i in 1:2, j in 1:2:3]
+    hidedecorations!.(ax)
+
+    cmap = cgrad(:turbo, scale=:exp10 )
+
+    hm1 = heatmap!(ax[1,1], sky, colormap=cmap)
+    ax[1,1].title="Sky"
+    Colorbar(fig[1, 2], hm1, minorticksvisible=true)
+
+    hm2 = heatmap!(ax[1,2], dirty.full, colormap=cmap)
+    ax[1,2].title="Dirty full"
+    Colorbar(fig[1, 4], hm2, minorticksvisible=true)
+
+    hm3 = heatmap!(ax[2,1], dirty.low, colormap=cmap)
+    ax[2,1].title="Dirty low"
+    Colorbar(fig[2, 2], hm3, minorticksvisible=true)
+
+    hm4 = heatmap!(ax[2,2], dirty.high, colormap=:turbo)
+    ax[2,2].title="Dirty high"
+    Colorbar(fig[2, 4], hm4, minorticksvisible=true)
+
+    rowsize!(fig.layout, 1, Aspect(1, 1))
+    rowsize!(fig.layout, 2, Aspect(1, 1))
+
+    fig
+end
+
+function plot_deconv(dirty::Matrix{T}, sky::Matrix{T}, i_rec::Matrix{T}, 
+    mse::Vector{T}, title::Vector{String}) where  {T<:Real}
+    
+    fig = Figure()
+
+    ax1 = Axis(fig[1, 1], aspect=DataAspect())
+    ax1.title = title[1]
+    ax2 = Axis(fig[1, 3], aspect=DataAspect())
+    ax2.title = title[2]
+    ax3 = Axis(fig[2, 1:4], xlabel = "Iterations")
+    hidedecorations!(ax1)
+    hidedecorations!(ax2)
+
+    cmap = cgrad(:turbo, scale=:exp10 )
+    
+    hm1 = heatmap!(ax1, dirty, colormap=cmap)
+    cbar = Colorbar(fig[1, 2], hm1,  minorticksvisible=true)
+    
+    hm2 = heatmap!(ax2, i_rec, colormap=cmap)
+    cbar = Colorbar(fig[1, 4], hm2,  minorticksvisible=true)
+    
+    l1 =  lines!(ax3, mse, label = "MSE")
+    axislegend(ax3)
+    rowsize!(fig.layout, 1, Aspect(1, 1))
+    rowsize!(fig.layout, 2, Relative(1/4))
+    
+    fig
+end
+
+
 # make data
 
 """
-    make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
+    make_bases(n_ants::Int, n_pix::Int; compress::Float64=0.9)
 
 makes the synthetic bases. The bases are grided inside the square 
     (-n\\_pix/2 ... n\\_pix/2) × (-n\\_pix/2 ... n\\_pix/2) 
@@ -80,7 +166,7 @@ makes the synthetic bases. The bases are grided inside the square
 - n\\_pix: number of pixels 
 - compress coefficient shrinks all the bases by a factor compress
 """
-function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0) 
+function make_bases(n_ants::Int, n_pix::Int; compress::Float64=0.9) 
 
     @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
     # make bases from random gridded antennas
@@ -102,7 +188,7 @@ function make_bases(n_ants::Int, n_pix::Int; compress::Float64=1.0)
 end
 
 """
-    make_bases(filename::String, n_pix::Int; compress::Float64=1.0)
+    make_bases(filename::String, n_pix::Int; compress::Float64=0.9)
 
     makes the bases from a file. The bases are grided inside the square 
         (-n\\_pix/2 ... n\\_pix/2) × (-n\\_pix/2 ... n\\_pix/2) 
@@ -113,7 +199,7 @@ end
 
     6 lines of header are skipped in filename
 """
-function make_bases(filename::String, n_pix::Int; compress::Float64=1.0) 
+function make_bases(filename::String, n_pix::Int; compress::Float64=0.9) 
 
 
     @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
