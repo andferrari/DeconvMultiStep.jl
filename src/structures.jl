@@ -8,7 +8,7 @@ mutable struct PSF{T <: Matrix{<:Real}}
     
     function PSF(full::T, low::T, high::T, n_pix::Int) where {T <: Matrix{<:Real}}
         
-        @assert size(full) == size(low) === size(high) "PSF's must have the same size"
+        @assert size(full) == size(low) == size(high) "PSF's must have the same size"
         (m, n) = size(full)
         @assert m == n == n_pix "PSF's must be square with size n_pix"
 
@@ -24,7 +24,7 @@ mutable struct Filters{T <: Matrix{<:Real}}
     
     function Filters(LowPass::T, HighPass::T, n_pix::Int) where {T <: Matrix{<:Real}}
         
-        @assert size(LowPass) === size(HighPass) "Filters PSF's must have the same size"
+        @assert size(LowPass) == size(HighPass) "Filters PSF's must have the same size"
         (m, n) = size(LowPass)
         @assert m == n == n_pix "Filters PSF's must be square with size n_pix"
 

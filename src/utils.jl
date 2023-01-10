@@ -140,7 +140,47 @@ function make_dirty(psf::PSF, sky::Matrix{T}, σ²::Float64) where {T<:Real}
     Dirty(i, i_low, i_high, psf.n_pix)
 end
 
+"""
+    make_dirty(psf::PSF, σ²::Float64)
+
+Computes the three dirty images.
+"""
+function make_dirty(uv::UV, sky::Matrix{T}, σ²::Float64) where {T<:Real}
+    
+    size_ = (uv.n_pix, uv.n_pix)
+    (size_ == size(sky)) || error("sky and uv plane have different size")
+
+    vis_n = fft(sky + sqrt(σ²)*randn(size_))
+    i = real.((ifft(fftshift(uv.full).*vis_n)))
+    i_low = real.((ifft(fftshift(uv.low).*vis_n)))
+    i_high = real.((ifft(fftshift(uv.high).*vis_n)))
+
+    Dirty(i, i_low, i_high, uv.n_pix)
+end
+
 # deconv
+
+"""
+    imfilter(img::Matrix{Float64}, psf::Matrix{Float64})
+
+convolves img by the psf. It computes a linear convolution using a circular 
+convolution after zero padding by half the width
+
+- the center of the psf is at size(psf)/2 
+"""
+function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
+
+    @assert size(img) == size(psf) "Image and psf must have the same size"
+    n, = size(img)
+    np = Int(n/2)
+
+    img_pad = vcat(zeros(np, 2n), hcat(zeros(n, np), img, zeros(n, np)), zeros(np, 2n))
+    psf_pad = vcat(zeros(np, 2n), hcat(zeros(n, np), psf, zeros(n, np)), zeros(np, 2n))
+
+    tmp = real(ifft(fft(img_pad).*fft(ifftshift(psf_pad))))
+    tmp[np+1:np+n, np+1:np+n]
+end
+
 
 """
     imfilter(img::Matrix{Float64}, psf::Matrix{Float64})
@@ -153,14 +193,7 @@ convolution after zero padding by half the width
 function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
     @assert size(img) == size(psf) "Image and psf must have the same size"
-    n, = size(img)
-    np = Int(n/2)
-
-    img_pad = vcat(zeros(np, 2n), hcat(zeros(n, np), img, zeros(n, np)), zeros(np, 2n))
-    psf_pad = vcat(zeros(np, 2n), hcat(zeros(n, np), psf, zeros(n, np)), zeros(np, 2n))
-
-    tmp = real(ifft(fft(img_pad).*fft(ifftshift(psf_pad))))
-    tmp[np+1:np+n, np+1:np+n]
+    real(ifft(fft(img).*fft(ifftshift(psf))))
 end
 
 """
@@ -192,32 +225,12 @@ function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}) where {T<:WT.OrthoWave
 end
 
 """
-    low_pass(ℓ::Float64, n_pix::Int)
+    fista_(H, id, wlts, λ, n_iter, η, G_low = false, G_high = false, i₀ = false, sky = false)
 
-Compute the ideal low pass filter PSF with cutoff frequency at ℓ.
-"""
-function  low_pass(ℓ::Float64, n_pix::Int)
-    H = zeros(n_pix, n_pix)
-    for k in -n_pix:n_pix, l in -n_pix:n_pix
-        if norm([k, l]) < ℓ
-            H[mod(k, n_pix) + 1,  mod(l, n_pix) + 1] = 1
-        end
-    end
-
-    #hanning(x) = 0.5 - 0.5*cos(2*pi*x/(n_sky-1))
-    #wind = ifftshift([hanning(x)*hanning(y) for x in 0:n_sky-1, y in 0:n_sky-1])
-
-    # no need to normalize psf TF(PSF)(0,0) = 1
-    real.(ifftshift(ifft(H)))
-
-end
-
-"""
-    fista(H, i, wlts, λ, n_iter, η, G_low = false, G_high = false, i₀ = false, sky = false)
-
-solve minₓ ||G_high⋅(i - H⋅wlts⋅x)||² + ||G_low⋅(i₀ - wlt⋅x)||² + λ||x||₁ 
+solve minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
 using FISTA algorithm
 
+- id : dirty image
 - n_iter : number of iterations
 - η : gradient step
 - G_low : low pass filter PSF
@@ -225,28 +238,47 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U} , i::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
-    G_low::Union{Nothing, Matrix{U}}=nothing, G_high::Union{Nothing, Matrix{U}}=nothing, i₀::Union{Nothing, Matrix{U}}=nothing, 
+function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
+    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
     
     # init
 
     (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
-    βₚ = zeros((size(i)...,(length(wlts))...))
+    βₚ = zeros((size(id)...,(length(wlts))...))
     α = βₚ
     tₚ = 1
+ 
+    # precomputations
     H_adj = adj(H)
-    
-    (G == nothing) || (G_adj = adj(G))
-    (sky == nothing) || (mse = Float64[])
+
+    if G == nothing
+        H2 = imfilter(H, H_adj)
+        Hid = imfilter(id, H_adj)
+    else 
+        Glow = G.LowPass
+        Ghigh = G.HighPass
+        Glow_adj = adj(Glow)
+        Ghigh_adj = adj(Ghigh)
+
+        HG2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
+        HGidip = imfilter(imfilter(imfilter(id, Ghigh), Ghigh_adj), H_adj) + imfilter(imfilter(ip, Glow), Glow_adj)
+    end
+
+    (sky === nothing) || (mse = Float64[])
 
     @showprogress 1 "Computing..." for k in 1:n_iter
 
         # compute gradient
 
         i_ = dwt_decomp_adj(α, wlts)
-        u = imfilter(imfilter(i_, H) - i, H_adj)
-        (G == nothing) || (u += imfilter(imfilter(i_ - i₀, G), G_adj))
+
+        if G === nothing
+            u = imfilter(i_, H2) - Hid
+            # u = imfilter(imfilter(i_, H) - id, H_adj)
+        else
+            u = imfilter(i_, HG2) - HGidip
+        end
         ∇f = 2*dwt_decomp(u, wlts)
 
         # apply prox
@@ -268,36 +300,45 @@ end
 
 # compute step
 
+
 """
     compute_step(H::Matrix{Float64}, wlts; G::Union{Bool, Matrix{Float64}}=false, n_iter=20)
 
 Compute the optimal gradient step when applying FISTA to
     minₓ ||i - H⋅wlts⋅x||² + ||G⋅(i₀ - wlt⋅x)||² + λ||x||₁ 
 """
-function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Matrix{U}}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
+function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
     (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     α = randn(size(H)...,length(wlts)...)
     H_adj = adj(H)
-    (G == nothing) || (G_adj = adj(G))
+ 
+    # precomputations
+
+    if G === nothing
+        H2 = imfilter(H, H_adj)
+    else
+        Glow = G.LowPass
+        Ghigh = G.HighPass
+        Glow_adj = adj(Glow)
+        Ghigh_adj = adj(Ghigh)
+        H2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Ghigh, Ghigh_adj)
+    end
 
     for n in 1:n_iter
 
-        i_ = dwt_decomp_adj(α, wlts)
-        u = imfilter(H_adj, imfilter(H, i_))        
-        (G == nothing) || (u += imfilter(G_adj, imfilter(G, i_)))
+        u = imfilter(dwt_decomp_adj(α, wlts), H2)      
         α_ = dwt_decomp(u, wlts)
         α = α_/norm(α_)
 
     end
 
-    i_ = dwt_decomp_adj(α, wlts)
-    u = imfilter(H_adj, imfilter(H, i_))        
-    (G == nothing) || (u += imfilter(G_adj, imfilter(G, i_)))
+    u = imfilter(dwt_decomp_adj(α, wlts), H2)      
     α_ = dwt_decomp(u, wlts)
 
     1/(2*dot(α,  α_))
 end
+
 
 
 """

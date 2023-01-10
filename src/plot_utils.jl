@@ -183,3 +183,77 @@ function plot_deconv_(dirty::Matrix{T}, sky::Matrix{T}, i_rec::Matrix{T},
     
     fig
 end
+
+
+function plot_filters(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, zoom = nothing) where {T<:Real}
+
+    #radial freq. response
+
+    g = filt_rad.(0:n_pix-1, ℓ, δ;σ²=σ², η²=η²)
+    gl = [tup[1] for tup in g]
+    gh = [tup[2] for tup in g]
+
+    fig_rad = Figure(resolution = (600, 400), font = "CMU Serif")
+    ax = Axis(fig_rad[1, 1],  xlabel = (L"r"), xlabelsize = 22)
+    lines!(ax, gl, label = L"g_\mathcal{L}(r)")
+    lines!(ax, gh, label = L"g_\mathcal{H}(r)")
+    lines!(ax, σ²*gh.^2+η²*gl.^2, label = L"\sigma^2 g_\mathcal{L}(r)^2 + \eta^2 g_\mathcal{H}(r)^2")
+
+    vlines!(ax, [ℓ+δ]; color = :black, linewidth = 1, linestyle = :dashdot)
+    vlines!(ax, [ℓ-δ]; color = :black, linewidth = 1, linestyle = :dashdot, xticks = ([ℓ+δ], ["p"]))
+    text!(ax, L"\ell + \delta", position = (ℓ+δ, -0.1))
+    text!(ax, L"\ell - \delta", position = (ℓ-δ , -0.1))
+
+    band!([ℓ-δ, ℓ+δ], [0, 0], [1, 1]; color = (:blue, 0.2))
+
+    zoom == nothing || xlims!(ax, 0, zoom)
+
+    axislegend(position = :rc)
+
+    # 2D PSFs
+
+    filter = make_filters(ℓ, δ, n_pix)
+
+    nx, ny  =size(filter.LowPass)
+    lx, ly = LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny)
+
+    fig_psf = Figure(resolution = (600, 300), font = "CMU Serif")
+    ax1 = Axis(fig_psf[1, 1], aspect=DataAspect(); title="Low pass PSF") 
+    ax2 = Axis(fig_psf[1, 3], aspect=DataAspect(); title="High pass PSF") 
+
+    hm1 = heatmap!(ax1, lx, ly, abs.(fftshift(fft(ifftshift(filter.LowPass)))))
+    hm2 = heatmap!(ax2, lx, ly, abs.(fftshift(fft(ifftshift(filter.HighPass)))))
+
+    if zoom != nothing 
+        xlims!(ax1, -zoom, zoom)
+        ylims!(ax1, -zoom, zoom)
+        xlims!(ax2, -zoom, zoom)
+        ylims!(ax2, -zoom, zoom)
+    end
+
+    Colorbar(fig_psf[1, 2], hm1)
+    Colorbar(fig_psf[1, 4], hm2)
+
+    rowsize!(fig_psf.layout, 1, Aspect(1, 1))
+
+    fig_rad, fig_psf
+
+end
+
+function plot_recon(i, uv, ℓ, δ)
+    nx, ny  =size(i)
+    lx, ly = LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny)
+
+    fig = Figure(resolution = (800, 600), font = "CMU Serif")
+    ax = Axis(fig[1, 1], aspect=DataAspect(); title = "Frequency domain")
+
+    hm = heatmap!(ax, lx, ly, abs.(fftshift(fft(ifftshift(i)))))
+    r_max = (uv.ℓ + uv.δ/2)*exp.(im*LinRange(0, 2*π, 256)) 
+    r_min = (uv.ℓ - uv.δ/2)*exp.(im*LinRange(0, 2*π, 256)) 
+    lines!(ax, real.(r_max), imag.(r_max), color = :red)
+    lines!(ax, real.(r_min), imag.(r_min), color = :red)
+
+    Colorbar(fig[1, 2], hm)
+
+    fig 
+end
