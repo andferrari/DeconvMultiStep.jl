@@ -1,3 +1,5 @@
+using CairoMakie
+using FFTW
 
 # Attributes(
 #     font = "Chilanka",

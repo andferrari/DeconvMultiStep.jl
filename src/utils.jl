@@ -48,7 +48,6 @@ end
 """
 function make_bases(filename::String, n_pix::Int; compress::Float64=0.9) 
 
-
     @assert compress ≤ 1.0 "Compress coefficient must be ≤ 1"
     # make bases from random gridded antennas
 
@@ -240,7 +239,7 @@ If sky is provided returns (x, mse)
 """
 function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
-    sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     
     # init
 
@@ -267,7 +266,8 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
 
     (sky === nothing) || (mse = Float64[])
 
-    @showprogress 1 "Computing..." for k in 1:n_iter
+    p_bar = Progress(n_iter; enabled=show_progress)
+    for k in 1:n_iter
 
         # compute gradient
 
@@ -294,6 +294,7 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
             push!(mse, norm(sky - dwt_decomp_adj(α, wlts)))
         end
 
+        next!(p_bar)
     end
     (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), mse) 
 end
