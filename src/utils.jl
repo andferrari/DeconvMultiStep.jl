@@ -1,7 +1,12 @@
-snr(x, xₑ) = round(20*log10(norm(x)/norm(x-xₑ)), digits=3)
 
+"""
+    snr(x::Array{T}, xₑ::Array{T}; ndigits::Int=3) where {T<:Real}
 
-# make data
+computes the snr with ndigits
+"""
+function snr(x::Array{T}, xₑ::Array{T}; ndigits::Int=3) where {T<:Real}
+    round(20*log10(norm(x)/norm(x-xₑ)), digits = ndigits)
+end
 
 """
     make_bases(n_ants::Int, n_pix::Int; compress::Float64=0.9)
@@ -37,10 +42,10 @@ end
 """
     make_bases(filename::String, n_pix::Int; compress::Float64=0.9)
 
-    makes the bases from a file. The bases are grided inside the square 
+makes the bases from a file. The bases are grided inside the square 
         (-n\\_pix/2 ... n\\_pix/2) × (-n\\_pix/2 ... n\\_pix/2) 
     
-    - n\\_ants: number of antennas
+    - filename: contains the bases
     - n\\_pix: number of pixels 
     - compress coefficient shrinks all the bases by a factor compress
 
@@ -88,7 +93,7 @@ end
     make_uv(bases::Matrix{Int}, n_pix::Int)
 
 make uv coverage from bases. 
-uv is a boolean matrix. The center is at (n_pix/2, n_pix/2)
+uv is a boolean matrix. The center is at (n_pix/2 + 1, n_pix/2 + 1)
 """
 function make_uv(bases::Matrix{Int}, n_pix::Int)     
     uv = zeros(Bool, n_pix, n_pix)
@@ -123,9 +128,9 @@ shrink(v::T, c::T) where {T<:AbstractFloat} = v > c ? v - c : (v < -c ? v + c : 
 # make dirty images
 
 """
-    make_dirty(psf::PSF, σ²::Float64)
+make_dirty(psf::PSF, sky::Matrix{T}, σ²::Float64) where {T<:Real}
 
-Computes the three dirty images.
+Computes the three dirty images. Add noise on dirty images.
 """
 function make_dirty(psf::PSF, sky::Matrix{T}, σ²::Float64) where {T<:Real}
     
@@ -140,9 +145,9 @@ function make_dirty(psf::PSF, sky::Matrix{T}, σ²::Float64) where {T<:Real}
 end
 
 """
-    make_dirty(psf::PSF, σ²::Float64)
+make_dirty(uv::UV, sky::Matrix{T}, σ²::Float64) where {T<:Real}
 
-Computes the three dirty images.
+Computes the three dirty images. Add noise on visibilities.
 """
 function make_dirty(uv::UV, sky::Matrix{T}, σ²::Float64) where {T<:Real}
     
@@ -165,7 +170,7 @@ end
 convolves img by the psf. It computes a linear convolution using a circular 
 convolution after zero padding by half the width
 
-- the center of the psf is at size(psf)/2 
+- the center of the psf is at size(psf)/2 + 1
 """
 function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
@@ -184,10 +189,9 @@ end
 """
     imfilter(img::Matrix{Float64}, psf::Matrix{Float64})
 
-convolves img by the psf. It computes a linear convolution using a circular 
-convolution after zero padding by half the width
+convolves img by the psf using a circular 
 
-- the center of the psf is at size(psf)/2 
+- the center of the psf is at size(psf)/2  + 1
 """
 function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
@@ -224,14 +228,17 @@ function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}) where {T<:WT.OrthoWave
 end
 
 """
-    fista_(H, id, wlts, λ, n_iter, η, G_low = false, G_high = false, i₀ = false, sky = false)
+    fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
+    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
 
 solve minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
 using FISTA algorithm
 
-- id : dirty image
+- id : high frequency dirty image
 - n_iter : number of iterations
 - η : gradient step
+- ip : low frequency image
 - G_low : low pass filter PSF
 - G_high : high pass filter PSF
 
@@ -251,7 +258,7 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
     # precomputations
     H_adj = adj(H)
 
-    if G == nothing
+    if G === nothing
         H2 = imfilter(H, H_adj)
         Hid = imfilter(id, H_adj)
     else 
@@ -303,14 +310,14 @@ end
 
 
 """
-    compute_step(H::Matrix{Float64}, wlts; G::Union{Bool, Matrix{Float64}}=false, n_iter=20)
+    compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing; n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
 Compute the optimal gradient step when applying FISTA to
-    minₓ ||i - H⋅wlts⋅x||² + ||G⋅(i₀ - wlt⋅x)||² + λ||x||₁ 
+    minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
 """
 function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
-    (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    (wlts === nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     α = randn(size(H)...,length(wlts)...)
     H_adj = adj(H)
  
@@ -346,7 +353,6 @@ end
     filt_rad(r::Float64, ℓ::Float64, δ::Float64; σ² = 1.0, η² = 1.0)
 
     - compute the low pass and high pass radial transfer function
-
 """
 function filt_rad(r::Real, ℓ::Real, δ::Real; σ² = 1.0, η² = 1.0)
     
@@ -375,14 +381,14 @@ end
 
 
 """
-    make_filters(ℓ::Float64, δ::Float64,n_pix::Int64; σ² = 1.0, η² = 1.0 )
+    make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0) 
 
-    - compute the low pass and high pass PSFs
+    - computes the low pass and high pass PSFs
 """
-function make_filters(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0) where {T<:Real}
+function make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0) 
     
     # compute the center in FFT plane
-    xc = yc = iseven(n_pix) ? n_pix/2 +1 : (n_pix+1)/2
+    xc = yc = iseven(n_pix) ? n_pix/2 + 1 : (n_pix+1)/2
 
     Hl = zeros(n_pix, n_pix)
     Hh = zeros(n_pix, n_pix)

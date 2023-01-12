@@ -186,12 +186,11 @@ function plot_deconv_(dirty::Matrix{T}, sky::Matrix{T}, i_rec::Matrix{T},
     fig
 end
 
-
-function plot_filters(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, zoom = nothing) where {T<:Real}
+function plot_filters_rad(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, zoom = nothing) where {T<:Real}
 
     #radial freq. response
 
-    g = filt_rad.(0:n_pix-1, ℓ, δ;σ²=σ², η²=η²)
+    g = filt_rad.(0:n_pix-1, ℓ, δ; σ²=σ², η²=η²)
     gl = [tup[1] for tup in g]
     gh = [tup[2] for tup in g]
 
@@ -207,26 +206,25 @@ function plot_filters(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, zoom 
     text!(ax, L"\ell - \delta", position = (ℓ-δ , -0.1))
 
     band!([ℓ-δ, ℓ+δ], [0, 0], [1, 1]; color = (:blue, 0.2))
-
-    zoom == nothing || xlims!(ax, 0, zoom)
-
     axislegend(position = :rc)
+    zoom === nothing || xlims!(ax, 0, zoom)
 
-    # 2D PSFs
+    fig_rad
 
-    filter = make_filters(ℓ, δ, n_pix)
+end
 
-    nx, ny  =size(filter.LowPass)
-    lx, ly = LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny)
+function plot_filters2D(G::Filters; zoom = nothing) 
 
-    fig_psf = Figure(resolution = (600, 300), font = "CMU Serif")
+    lx = LinRange(-G.n_pix/2, G.n_pix/2, G.n_pix)
+
+    fig_psf = Figure(resolution = (800, 400), font = "CMU Serif")
     ax1 = Axis(fig_psf[1, 1], aspect=DataAspect(); title="Low pass PSF") 
     ax2 = Axis(fig_psf[1, 3], aspect=DataAspect(); title="High pass PSF") 
 
-    hm1 = heatmap!(ax1, lx, ly, abs.(fftshift(fft(ifftshift(filter.LowPass)))))
-    hm2 = heatmap!(ax2, lx, ly, abs.(fftshift(fft(ifftshift(filter.HighPass)))))
+    hm1 = heatmap!(ax1, lx, lx, abs.(fftshift(fft(ifftshift(G.LowPass)))))
+    hm2 = heatmap!(ax2, lx, lx, abs.(fftshift(fft(ifftshift(G.HighPass)))))
 
-    if zoom != nothing 
+    if zoom !== nothing 
         xlims!(ax1, -zoom, zoom)
         ylims!(ax1, -zoom, zoom)
         xlims!(ax2, -zoom, zoom)
@@ -238,15 +236,16 @@ function plot_filters(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, zoom 
 
     rowsize!(fig_psf.layout, 1, Aspect(1, 1))
 
-    fig_rad, fig_psf
+    fig_psf
 
 end
+
 
 function plot_recon(i, uv, ℓ, δ)
     nx, ny  =size(i)
     lx, ly = LinRange(-nx/2, nx/2, nx), LinRange(-ny/2, ny/2, ny)
 
-    fig = Figure(resolution = (800, 600), font = "CMU Serif")
+    fig = Figure(resolution = (600, 600), font = "CMU Serif")
     ax = Axis(fig[1, 1], aspect=DataAspect(); title = "Frequency domain")
 
     hm = heatmap!(ax, lx, ly, abs.(fftshift(fft(ifftshift(i)))))
