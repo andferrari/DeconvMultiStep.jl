@@ -282,7 +282,6 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
 
         if G === nothing
             u = imfilter(i_, H2) - Hid
-            # u = imfilter(imfilter(i_, H) - id, H_adj)
         else
             u = imfilter(i_, HG2) - HGidip
         end
@@ -310,12 +309,13 @@ end
 
 
 """
-    compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing; n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
+    compute_step_(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing; n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
 Compute the optimal gradient step when applying FISTA to
     minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
+using power iterations.
 """
-function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
+function compute_step_(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing, n_iter::Int=20) where {T<:WT.OrthoWaveletClass, U<:Real}
 
     (wlts === nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
     α = randn(size(H)...,length(wlts)...)
@@ -330,7 +330,7 @@ function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G:
         Ghigh = G.HighPass
         Glow_adj = adj(Glow)
         Ghigh_adj = adj(Ghigh)
-        H2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Ghigh, Ghigh_adj)
+        H2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
     end
 
     for n in 1:n_iter
@@ -401,3 +401,25 @@ function make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0)
     HighPass = real.(ifftshift(ifft(fftshift(Hh))))
     Filters(LowPass, HighPass, n_pix)
 end
+
+"""
+    compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+Compute the optimal gradient step when applying FISTA to
+    minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
+for convolution operators
+"""
+function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G::Union{Nothing, Filters}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+    (wlts === nothing) ? M = 8 : M = length(wlts)
+
+    if G === nothing
+        step = 1/(2*M*maximum(abs2.(fft(H))))
+    else
+        Glow = G.LowPass
+        Ghigh = G.HighPass
+        step = 1/(2*M*maximum(abs2.(fft(H).*fft(Ghigh)) + abs2.(fft(Glow))))
+    end
+    return step
+end
+
