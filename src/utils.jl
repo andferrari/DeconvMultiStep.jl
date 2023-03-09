@@ -228,7 +228,7 @@ function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}) where {T<:WT.OrthoWave
 end
 
 """
-    fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
+    fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
 
@@ -237,14 +237,14 @@ using FISTA algorithm
 
 - id : high frequency dirty image
 - n_iter : number of iterations
-- η : gradient step
+- η : gradient step. If not provided η is computed from ∇f Lipschitz constant
 - ip : low frequency image
 - G_low : low pass filter PSF
 - G_high : high pass filter PSF
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float64; wlts::Union{Nothing, Vector{T}}=nothing,
+function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     
@@ -261,6 +261,8 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
     if G === nothing
         H2 = imfilter(H, H_adj)
         Hid = imfilter(id, H_adj)
+        
+        (η == nothing) && (η =compute_step(H; wlts = wlts))
     else 
         Glow = G.LowPass
         Ghigh = G.HighPass
@@ -269,6 +271,8 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int, η::Float
 
         HG2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
         HGidip = imfilter(imfilter(imfilter(id, Ghigh), Ghigh_adj), H_adj) + imfilter(imfilter(ip, Glow), Glow_adj)
+
+        (η == nothing) && (η =compute_step(H; wlts = wlts, G=G))
     end
 
     (sky === nothing) || (mse = Float64[])
