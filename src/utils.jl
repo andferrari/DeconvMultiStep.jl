@@ -301,7 +301,7 @@ function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Uni
         tₚ = t
 
         if sky ≠ nothing 
-            push!(mse, norm(sky - dwt_decomp_adj(α, wlts)))
+            push!(mse, norm(sky - dwt_decomp_adj(α, wlts))^2)
         end
 
         next!(p_bar)
