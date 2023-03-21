@@ -190,7 +190,7 @@ function plot_filters_rad(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, z
 
     #radial freq. response
 
-    g = filt_rad.(0:n_pix-1, ℓ, δ; σ²=σ², η²=η²)
+    g = filt_rad.(0:n_pix/2-1, ℓ, δ; σ²=σ², η²=η²)
     gl = [tup[1] for tup in g]
     gh = [tup[2] for tup in g]
 
