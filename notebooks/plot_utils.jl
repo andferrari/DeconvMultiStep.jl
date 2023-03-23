@@ -11,6 +11,11 @@ using FFTW
 
 # theme isa Attributes && set_theme!(theme)
 
+function make_mask(n::Int, margin::Int)
+    mask = fill(false, n, n)
+    mask[margin+1:n-margin, margin+1:n-margin] .= true
+    return mask
+end
 
 function plot_psf(psf::PSF, uv::UV; zoom = 1.0)
 
