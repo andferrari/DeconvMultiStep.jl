@@ -13,8 +13,8 @@ dirty = read(FITS(joinpath(root, "tmp_dirty_full.fits"))[1])
 sky = read(FITS(joinpath(root, "sky.fits"))[1])
 λ = comp_λ(psf, dirty, sky)
 
-i_lowres = fista(psf, dirty, λ, 200)
+i_fullres = fista(psf, dirty, λ, 200)
 
 f = FITS(joinpath(root, "ferrari_output_fullres.fits"), "w")
-write(f, i_lowres)
+write(f, i_fullres)
 close(f)
