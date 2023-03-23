@@ -1,5 +1,23 @@
 
 """
+    comp_λ(psf::Matrix{T}, dirty::Matrix{T}, sky::Matrix{T}, G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{T}}=nothing; k::Float64=2.0) where {T<:Real}
+
+computes the regularization parameter \\lambda when sky is known
+"""
+function comp_λ(psf::Matrix{T}, dirty::Matrix{T}, sky::Matrix{T}, G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{T}}=nothing; k::Float64=2.0) where {T<:Real}
+
+    if G === nothing
+        λ = k*norm(dirty - imfilter(sky, psf))/sqrt(prod(size(dirty)))
+    else
+        cost1 = norm(imfilter(dirty - imfilter(sky, psf), G.HighPass))^2
+        cost2 = norm(imfilter(ip - sky, G.LowPass))^2
+        λ = k*sqrt(cost1 + cost2)/sqrt(prod(size(dirty)))
+    end
+
+    return λ
+end
+
+"""
     snr(x::Array{T}, xₑ::Array{T}; ndigits::Int=3) where {T<:Real}
 
 computes the snr with ndigits
@@ -244,7 +262,7 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     

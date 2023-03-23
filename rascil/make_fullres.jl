@@ -1,16 +1,20 @@
+# reconstruction using all bases, 
+# i.e. full telescope resolution
+
 using DeconvMultiStep
 using FITSIO
 
 root = "/root"
 
-psf = read(FITS(joinpath(root, "tmp_psf_high.fits"))[1])
-dirty = read(FITS(joinpath(root, "tmp_dirty_high.fits"))[1])
-i_lowres = read(FITS(joinpath(root, "ferrari_output_low.fits"))[1])
-n_pix, _ = size(psf)
+psf = read(FITS(joinpath(root, "tmp_psf_full.fits"))[1])
+dirty = read(FITS(joinpath(root, "tmp_dirty_full.fits"))[1])
 
-G = make_filters(5, 50, n_pix)
-i_fullres = fista(psf, dirty, 1e-4, 200; G=G, ip = i_lowres)
+# sky is needed to compute the regularisation parameter
+sky = read(FITS(joinpath(root, "sky.fits"))[1])
+λ = comp_λ(psf, dirty, sky)
 
-f = FITS(joinpath(root, "ferrari_output_full.fits"), "w")
-write(f, i_fullres)
+i_lowres = fista(psf, dirty, λ, 200)
+
+f = FITS(joinpath(root, "ferrari_output_fullres.fits"), "w")
+write(f, i_lowres)
 close(f)

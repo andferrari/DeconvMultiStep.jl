@@ -6,3 +6,7 @@ Split the deconvolution in 2 step:
 
 An example is available in `notebooks/main_meerkat.ipynb`
 
+`DeconvMultiStep.jl/rascil` folder contains the files for Rascil minor loop:
+- `make_fullres.jl`: minor loop when using all the baselines
+- `make_lowres.jl`: minor loop when using only *short* baselines
+- `make_multistep.jl`: minor loop when using only *long* baselines and output of `make_lowres.jl`
