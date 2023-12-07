@@ -5,6 +5,7 @@ using LinearAlgebra
 using Wavelets
 using ProgressMeter
 using DelimitedFiles
+using IUWT
 
 include("structures.jl")
 export PSF, Filters, Dirty, UV

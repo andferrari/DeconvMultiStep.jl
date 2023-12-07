@@ -190,7 +190,7 @@ convolution after zero padding by half the width
 
 - the center of the psf is at size(psf)/2 + 1
 """
-function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
+function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
     @assert size(img) == size(psf) "Image and psf must have the same size"
     n, = size(img)
@@ -211,7 +211,7 @@ convolves img by the psf using a circular
 
 - the center of the psf is at size(psf)/2  + 1
 """
-function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
+function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
     @assert size(img) == size(psf) "Image and psf must have the same size"
     real(ifft(fft(img).*fft(ifftshift(psf))))
@@ -262,7 +262,7 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+function fista_(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     
@@ -445,3 +445,120 @@ function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G:
     return step
 end
 
+"""
+    compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9)
+
+Compute the optimal gradient step when applying FISTA to
+    minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
+for convolution operators
+"""
+function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9) where {U<:Real}
+    α = randn(size(H)...,scale...)
+    H_adj = adj(H)
+ 
+    # precomputations
+
+    if G === nothing
+        H2 = imfilter(H, H_adj)
+    else
+        Glow = G.LowPass
+        Ghigh = G.HighPass
+        Glow_adj = adj(Glow)
+        Ghigh_adj = adj(Ghigh)
+        H2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
+    end
+
+    for n in 1:n_iter
+        u = imfilter(iuwt_decomp_adj(α, scale), H2);
+        α_ = iuwt_decomp(u, scale);
+        α = α_/norm(α_)
+    end
+
+    u = imfilter(iuwt_decomp_adj(α, scale), H2)      
+    α_ = iuwt_decomp(u, scale)
+
+    1/(2*dot(α,  α_))
+end
+
+"""
+    fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+solve minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
+using FISTA algorithm
+
+- id : high frequency dirty image
+- n_iter : number of iterations
+- η : gradient step. If not provided η is computed from ∇f Lipschitz constant
+- ip : low frequency image
+- G_low : low pass filter PSF
+- G_high : high pass filter PSF
+
+If sky is provided returns (x, mse)
+"""
+function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{Nothing, Float64}=nothing, 
+    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {U<:Real}
+    
+    width = size(id)[1]
+    scales = trunc(Int, log2(width))
+
+    # init
+    βₚ = zeros((size(id)...,scales...))
+    α = βₚ
+    tₚ = 1
+ 
+    # precomputations
+    H_adj = adj(H)
+
+    if G === nothing
+        H2 = imfilter(H, H_adj)
+        Hid = imfilter(id, H_adj)
+        
+        (η == nothing) && (η =compute_step_iuwt(H, scale=scales))
+    else 
+        Glow = G.LowPass
+        Ghigh = G.HighPass
+        Glow_adj = adj(Glow)
+        Ghigh_adj = adj(Ghigh)
+
+        HG2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
+        HGidip = imfilter(imfilter(imfilter(id, Ghigh), Ghigh_adj), H_adj) + imfilter(imfilter(ip, Glow), Glow_adj)
+
+        (η == nothing) && (η =compute_step_iuwt(H; scale=scales, G=G))
+    end
+
+    (sky === nothing) || (mse = Float64[])
+
+    p_bar = Progress(n_iter; enabled=show_progress)
+    for k in 1:n_iter
+
+        # compute gradient
+
+        i_ = iuwt_decomp_adj(α, scales)
+
+        if G === nothing
+            u = imfilter(i_, H2) - Hid
+        else
+            u = imfilter(i_, HG2) - HGidip
+        end
+        ∇f = 2*iuwt_decomp(u, scales)
+
+        # apply prox
+        β = shrink.(α - η*∇f, η*λ)
+
+        # update
+        t = (1 + sqrt(1+4*tₚ^2))/2
+        α = β + ((tₚ-1)/t)*(β - βₚ)
+        βₚ = β
+        tₚ = t
+
+        if sky ≠ nothing 
+            push!(mse, norm(sky - iuwt_decomp_adj(α, scales))^2)
+        end
+
+        next!(p_bar)
+    end
+    (sky == nothing) ? (return iuwt_decomp_adj(α, scales)) : (return iuwt_decomp_adj(α, scales), mse) 
+end
