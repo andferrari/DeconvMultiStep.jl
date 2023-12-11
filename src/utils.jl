@@ -262,7 +262,7 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista_(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     
@@ -292,7 +292,7 @@ function fista_(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Uni
 
         (η == nothing) && (η =compute_step(H; wlts = wlts, G=G))
     end
-
+ 
     (sky === nothing) || (mse = Float64[])
 
     p_bar = Progress(n_iter; enabled=show_progress)
@@ -469,19 +469,19 @@ function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_
     end
 
     for n in 1:n_iter
-        u = imfilter(iuwt_decomp_adj(α, scale), H2);
+        u = imfilter(iuwt_recomp(α, scale), H2);
         α_ = iuwt_decomp(u, scale);
         α = α_/norm(α_)
     end
 
-    u = imfilter(iuwt_decomp_adj(α, scale), H2)      
+    u = imfilter(iuwt_recomp(α, scale), H2)      
     α_ = iuwt_decomp(u, scale)
 
     1/(2*dot(α,  α_))
 end
 
 """
-    fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+    fista_iuwt(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
 
@@ -497,7 +497,7 @@ using FISTA algorithm
 
 If sky is provided returns (x, mse)
 """
-function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{Nothing, Float64}=nothing, 
+function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {U<:Real}
     
@@ -536,7 +536,7 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{
 
         # compute gradient
 
-        i_ = iuwt_decomp_adj(α, scales)
+        i_ = iuwt_recomp(α, scales)
 
         if G === nothing
             u = imfilter(i_, H2) - Hid
@@ -555,10 +555,10 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{
         tₚ = t
 
         if sky ≠ nothing 
-            push!(mse, norm(sky - iuwt_decomp_adj(α, scales))^2)
+            push!(mse, norm(sky - iuwt_recomp(α, scales))^2)
         end
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return iuwt_decomp_adj(α, scales)) : (return iuwt_decomp_adj(α, scales), mse) 
+    (sky == nothing) ? (return iuwt_recomp(α, scales)) : (return iuwt_recomp(α, scales), mse) 
 end
