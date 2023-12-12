@@ -452,7 +452,7 @@ Compute the optimal gradient step when applying FISTA to
     minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
 for convolution operators
 """
-function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9) where {U<:Real}
+function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9, scale_offset::Int=0) where {U<:Real}
     α = randn(size(H)...,scale...)
     H_adj = adj(H)
  
@@ -469,12 +469,13 @@ function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_
     end
 
     for n in 1:n_iter
-        u = imfilter(iuwt_recomp(α, scale), H2);
+        r = iuwt_recomp(α, scale_offset)
+        u = imfilter(r, H2);
         α_ = iuwt_decomp(u, scale);
         α = α_/norm(α_)
     end
 
-    u = imfilter(iuwt_recomp(α, scale), H2)      
+    u = imfilter(iuwt_recomp(α, scale_offset), H2)      
     α_ = iuwt_decomp(u, scale)
 
     1/(2*dot(α,  α_))
@@ -499,7 +500,7 @@ If sky is provided returns (x, mse)
 """
 function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
-    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {U<:Real}
+    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false, scale_offset::Int=0) where {U<:Real}
     
     width = size(id)[1]
     scales = trunc(Int, log2(width))
@@ -515,7 +516,6 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     if G === nothing
         H2 = imfilter(H, H_adj)
         Hid = imfilter(id, H_adj)
-        
         (η == nothing) && (η =compute_step_iuwt(H, scale=scales))
     else 
         Glow = G.LowPass
@@ -536,7 +536,7 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
 
         # compute gradient
 
-        i_ = iuwt_recomp(α, scales)
+        i_ = iuwt_recomp(α, scale_offset)
 
         if G === nothing
             u = imfilter(i_, H2) - Hid
@@ -555,10 +555,10 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
         tₚ = t
 
         if sky ≠ nothing 
-            push!(mse, norm(sky - iuwt_recomp(α, scales))^2)
+            push!(mse, norm(sky - iuwt_recomp(α, scale_offset))^2)
         end
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return iuwt_recomp(α, scales)) : (return iuwt_recomp(α, scales), mse) 
+    (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), mse) 
 end
