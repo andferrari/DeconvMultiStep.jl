@@ -516,7 +516,7 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     if G === nothing
         H2 = imfilter(H, H_adj)
         Hid = imfilter(id, H_adj)
-        (η == nothing) && (η =compute_step_iuwt(H, scale=scales))
+        (η == nothing) && (η =compute_step_iuwt(H, scale=scales, n_iter=50))
     else 
         Glow = G.LowPass
         Ghigh = G.HighPass
@@ -526,10 +526,11 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
         HG2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
         HGidip = imfilter(imfilter(imfilter(id, Ghigh), Ghigh_adj), H_adj) + imfilter(imfilter(ip, Glow), Glow_adj)
 
-        (η == nothing) && (η =compute_step_iuwt(H; scale=scales, G=G))
+        (η == nothing) && (η =compute_step_iuwt(H; scale=scales, G=G, n_iter=50))
     end
 
     (sky === nothing) || (mse = Float64[])
+    momentum = Float64[]
 
     p_bar = Progress(n_iter; enabled=show_progress)
     for k in 1:n_iter
@@ -550,7 +551,8 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
 
         # update
         t = (1 + sqrt(1+4*tₚ^2))/2
-        α = β + ((tₚ-1)/t)*(β - βₚ)
+        m = β - βₚ
+        α = β + ((tₚ-1)/t)*(m)
         βₚ = β
         tₚ = t
 
@@ -558,7 +560,9 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
             push!(mse, norm(sky - iuwt_recomp(α, scale_offset))^2)
         end
 
+        push!(momentum, norm(m))
+
         next!(p_bar)
     end
-    (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), mse) 
+    (sky == nothing) ? (return iuwt_recomp(α, scale_offset), momentum) : (return iuwt_recomp(α, scale_offset), momentum, mse) 
 end
