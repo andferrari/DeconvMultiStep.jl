@@ -190,7 +190,7 @@ convolution after zero padding by half the width
 
 - the center of the psf is at size(psf)/2 + 1
 """
-function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
+function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
     @assert size(img) == size(psf) "Image and psf must have the same size"
     n, = size(img)
@@ -211,7 +211,7 @@ convolves img by the psf using a circular
 
 - the center of the psf is at size(psf)/2  + 1
 """
-function imfilter_(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
+function imfilter(img::Matrix{T}, psf::Matrix{T}) where {T<:Real}
 
     @assert size(img) == size(psf) "Image and psf must have the same size"
     real(ifft(fft(img).*fft(ifftshift(psf))))
