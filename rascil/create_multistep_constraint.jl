@@ -2,7 +2,7 @@ using DeconvMultiStep
 using FITSIO
 using FFTW
 
-root = "/root"
+root = "."
 
 i_prev_lowres = read(FITS(joinpath(root, ARGS[1]))[1])
 i_prev_deconv = read(FITS(joinpath(root, ARGS[2]))[1])
