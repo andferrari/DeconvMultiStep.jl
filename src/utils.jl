@@ -294,6 +294,8 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
     end
  
     (sky === nothing) || (mse = Float64[])
+    (sky === nothing) || (coeff_dist = Float64[])
+    (sky === nothing) || (last_α = zeros((size(id)...,(length(wlts))...)))
 
     p_bar = Progress(n_iter; enabled=show_progress)
     for k in 1:n_iter
@@ -314,17 +316,20 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
 
         # update
         t = (1 + sqrt(1+4*tₚ^2))/2
+        
         α = β + ((tₚ-1)/t)*(β - βₚ)
         βₚ = β
         tₚ = t
 
         if sky ≠ nothing 
             push!(mse, norm(sky - dwt_decomp_adj(α, wlts))^2)
+            push!(coeff_dist, norm(α - last_α))
+            last_α = α
         end
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), mse) 
+    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), coeff_dist, mse) 
 end
 
 # compute step
@@ -530,7 +535,8 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     end
 
     (sky === nothing) || (mse = Float64[])
-    momentum = Float64[]
+    (sky === nothing) || (coeff_dist = Float64[])
+    (sky === nothing) || (last_α = zeros((size(id)...,scales...)))
 
     p_bar = Progress(n_iter; enabled=show_progress)
     for k in 1:n_iter
@@ -551,18 +557,18 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
 
         # update
         t = (1 + sqrt(1+4*tₚ^2))/2
-        m = β - βₚ
-        α = β + ((tₚ-1)/t)*(m)
+        
+        α = β + ((tₚ-1)/t)*(β - βₚ)
         βₚ = β
         tₚ = t
 
         if sky ≠ nothing 
             push!(mse, norm(sky - iuwt_recomp(α, scale_offset))^2)
+            push!(coeff_dist, norm(α - last_α))
+            last_α = α
         end
-
-        push!(momentum, norm(m))
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return iuwt_recomp(α, scale_offset), momentum) : (return iuwt_recomp(α, scale_offset), momentum, mse) 
+    (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), coeff_dist, mse) 
 end
