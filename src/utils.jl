@@ -17,6 +17,7 @@ function comp_λ(psf::Matrix{T}, dirty::Matrix{T}, sky::Matrix{T}, G::Union{Noth
     return λ
 end
 
+
 """
     snr(x::Array{T}, xₑ::Array{T}; ndigits::Int=3) where {T<:Real}
 
@@ -246,6 +247,25 @@ function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}) where {T<:WT.OrthoWave
 end
 
 """
+    cost(x::Array{T}, xₑ::Array{T}; ndigits::Int=3) where {T<:Real}
+
+evalutes cost function
+"""
+function cost(x::Array{U}, psf::Matrix{U}, dirty::Matrix{U}, wlts::Vector{T}, λ::Float64; G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+    i_ = dwt_decomp_adj(x, wlts)
+
+    if G === nothing
+        y = norm(dirty - imfilter(i_, psf))^2 + λ * norm(x, 1)
+    else
+        h_r = norm(imfilter(dirty - imfilter(i_, psf), G.HighPass))^2 + λ * norm(x, 1)
+        y = norm(imfilter(i_ - ip, G.LowPass))^2 + h_r
+    end
+
+    return y
+end
+
+
+"""
     fista(H::Matrix{U} , id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
@@ -263,8 +283,7 @@ using FISTA algorithm
 If sky is provided returns (x, mse)
 """
 function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
-    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, 
-    sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
+    G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing, sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
     
     # init
 
@@ -295,6 +314,7 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
  
     (sky === nothing) || (mse = Float64[])
     (sky === nothing) || (coeff_dist = Float64[])
+    (sky === nothing) || (costs = Float64[])
     (sky === nothing) || (last_α = zeros((size(id)...,(length(wlts))...)))
 
     p_bar = Progress(n_iter; enabled=show_progress)
@@ -324,12 +344,13 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
         if sky ≠ nothing 
             push!(mse, norm(sky - dwt_decomp_adj(α, wlts))^2)
             push!(coeff_dist, norm(α - last_α))
+            push!(costs, cost(α, H, id, wlts, λ, G=G, ip=ip))
             last_α = α
         end
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), coeff_dist, mse) 
+    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), coeff_dist, mse, costs) 
 end
 
 # compute step
@@ -412,7 +433,7 @@ end
 
     - computes the low pass and high pass PSFs
 """
-function make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0) 
+function make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0, switch = false) 
     
     # compute the center in FFT plane
     xc = yc = iseven(n_pix) ? n_pix/2 + 1 : (n_pix+1)/2
@@ -426,7 +447,7 @@ function make_filters(ℓ::Real, δ::Real, n_pix::Int64; σ² = 1.0, η² = 1.0)
     end
     LowPass = real.(ifftshift(ifft(fftshift(Hl))))
     HighPass = real.(ifftshift(ifft(fftshift(Hh))))
-    Filters(LowPass, HighPass, n_pix)
+    return switch ? Filters(HighPass, LowPass, n_pix) : Filters(LowPass, HighPass, n_pix)
 end
 
 """
@@ -451,13 +472,13 @@ function compute_step(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G:
 end
 
 """
-    compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9)
+    compute_step_poweriter(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9)
 
 Compute the optimal gradient step when applying FISTA to
     minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
-for convolution operators
+for convolution operators in the case where power iteration is needed, such as in iuwt
 """
-function compute_step_iuwt(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9, scale_offset::Int=0) where {U<:Real}
+function compute_step_poweriter(H::Matrix{U};  G::Union{Nothing, Filters}=nothing, n_iter::Int=20, scale::Int=9, scale_offset::Int=0) where {U<:Real}
     α = randn(size(H)...,scale...)
     H_adj = adj(H)
  
@@ -492,7 +513,7 @@ end
     sky::Union{Nothing, Matrix{U}}=nothing, show_progress=false) where {T<:WT.OrthoWaveletClass, U<:Real}
 
 solve minₓ ||G_high⋅(id - H⋅wlts⋅x)||² + ||G_low⋅(ip - wlt⋅x)||² + λ||x||₁ 
-using FISTA algorithm
+using FISTA algorithm and IUWT wavelets. This function is kept separate from the main fista algorithm for the time being as it is only used for testing
 
 - id : high frequency dirty image
 - n_iter : number of iterations
@@ -521,7 +542,7 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     if G === nothing
         H2 = imfilter(H, H_adj)
         Hid = imfilter(id, H_adj)
-        (η == nothing) && (η =compute_step_iuwt(H, scale=scales, n_iter=50))
+        (η == nothing) && (η =compute_step_poweriter(H, scale=scales, n_iter=50))
     else 
         Glow = G.LowPass
         Ghigh = G.HighPass
@@ -531,12 +552,13 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
         HG2 = imfilter(imfilter(imfilter(H, Ghigh), Ghigh_adj), H_adj) + imfilter(Glow, Glow_adj)
         HGidip = imfilter(imfilter(imfilter(id, Ghigh), Ghigh_adj), H_adj) + imfilter(imfilter(ip, Glow), Glow_adj)
 
-        (η == nothing) && (η =compute_step_iuwt(H; scale=scales, G=G, n_iter=50))
+        (η == nothing) && (η =compute_step_poweriter(H; scale=scales, G=G, n_iter=50))
     end
 
     (sky === nothing) || (mse = Float64[])
     (sky === nothing) || (coeff_dist = Float64[])
     (sky === nothing) || (last_α = zeros((size(id)...,scales...)))
+    (sky === nothing) || (costs = Float64[])
 
     p_bar = Progress(n_iter; enabled=show_progress)
     for k in 1:n_iter
@@ -565,10 +587,11 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
         if sky ≠ nothing 
             push!(mse, norm(sky - iuwt_recomp(α, scale_offset))^2)
             push!(coeff_dist, norm(α - last_α))
+            push!(costs, cost(α, H, id, wlts, λ, G=G, ip=ip))
             last_α = α
         end
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), coeff_dist, mse) 
+    (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), coeff_dist, mse, costs) 
 end

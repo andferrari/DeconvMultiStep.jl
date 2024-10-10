@@ -10,3 +10,6 @@ IUWT = "0283e1c8-a5c8-4017-84c4-7c819317a0ae"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Wavelets = "29a6e085-ba6d-5f35-a997-948ac2efa89a"
+
+[compat]
+IUWT = "0.2.0"
