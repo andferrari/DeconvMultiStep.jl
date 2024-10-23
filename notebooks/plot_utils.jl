@@ -200,13 +200,13 @@ function plot_filters_rad(ℓ::T, δ::T, n_pix::Int64; σ² = 1.0, η² = 1.0, z
     gh = [tup[2] for tup in g]
 
     fig_rad = Figure(resolution = (600, 400), font = "CMU Serif")
-    ax = Axis(fig_rad[1, 1],  xlabel = (L"r"), xlabelsize = 22)
+    ax = Axis(fig_rad[1, 1],  xlabel = (L"r"), xlabelsize = 22, xgridvisible=false, ygridvisible=false)
     lines!(ax, gl, label = L"g_\mathcal{L}(r)")
     lines!(ax, gh, label = L"g_\mathcal{H}(r)")
     lines!(ax, σ²*gh.^2+η²*gl.^2, label = L"\sigma^2 g_\mathcal{L}(r)^2 + \eta^2 g_\mathcal{H}(r)^2")
 
     vlines!(ax, [ℓ+δ]; color = :black, linewidth = 1, linestyle = :dashdot)
-    vlines!(ax, [ℓ-δ]; color = :black, linewidth = 1, linestyle = :dashdot, xticks = ([ℓ+δ], ["p"]))
+    vlines!(ax, [ℓ-δ]; color = :black, linewidth = 1, linestyle = :dashdot)
     text!(ax, L"\ell + \delta", position = (ℓ+δ, -0.1))
     text!(ax, L"\ell - \delta", position = (ℓ-δ , -0.1))
 

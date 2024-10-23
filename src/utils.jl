@@ -595,3 +595,86 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     end
     (sky == nothing) ? (return iuwt_recomp(α, scale_offset)) : (return iuwt_recomp(α, scale_offset), coeff_dist, mse, costs) 
 end
+
+"""
+    compute_step_cov(H_adj_cov_H::Matrix{U}; wlts::Union{Nothing, Vector{T}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+Compute the optimal gradient step when applying FISTA to
+    minₓ ||id - H⋅wlts⋅x||² + λ||x||₁ 
+when covariance is taken into account. Like the corresponding fista function, this assumes that the noise is Gaussian and independent in the Fourier domain.
+"""
+function compute_step_cov(H_adj_cov_H::Matrix{U}; wlts::Union{Nothing, Vector{T}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+    (wlts === nothing) ? M = 8 : M = length(wlts)
+
+    step = 1/(2*M*maximum(real.(fft(H_adj_cov_H))))
+
+    return step
+end
+
+
+
+"""
+    fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+
+solve minₓ ||id - H⋅wlts⋅x||² + λ||x||₁ while taking into account some inverse covariance matrix icov using FISTA algorithm.
+This function assumes that the noise is both Gaussian, and independent in the Fourier domain.
+
+- id : high frequency dirty image
+- icov : inverse covariance matri
+- n_iter : number of iterations
+- η : gradient step. If not provided η is computed from ∇f Lipschitz constant
+- ip : low frequency image
+- G_low : low pass filter PSF
+- G_high : high pass filter PSF
+
+If sky is provided returns (x, mse)
+"""
+
+function fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+    sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+    
+    # init
+
+    (wlts == nothing) && (wlts = [WT.db1, WT.db2, WT.db3, WT.db4, WT.db5, WT.db6, WT.db7, WT.db8])
+    βₚ = zeros((size(id)...,(length(wlts))...))
+    α = βₚ
+    tₚ = 1
+
+    # precomputations
+    H_adj = adj(H)
+    H_adj_icov = imfilter(H_adj, icov)
+    H_adj_icov_H = imfilter(H, H_adj_icov)
+    idicov = imfilter(id, H_adj_icov)
+    
+    (η == nothing) && (η = compute_step_cov(H_adj_icov_H; wlts = wlts))
+ 
+    (sky === nothing) || (mse = Float64[])
+
+    for k in 1:n_iter
+
+        # compute gradient
+
+        i_ = dwt_decomp_adj(α, wlts)
+
+        u = imfilter(i_, H_adj_icov_H) - idicov
+
+        ∇f = 2*dwt_decomp(u, wlts)
+
+        # apply prox
+        β = shrink.(α - η*∇f, η*λ)
+
+        # update
+        t = (1 + sqrt(1+4*tₚ^2))/2
+        
+        α = β + ((tₚ-1)/t)*(β - βₚ)
+        βₚ = β
+        tₚ = t
+
+        if sky ≠ nothing 
+            push!(mse, norm(sky - dwt_decomp_adj(α, wlts))^2)
+        end
+    end
+    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), mse) 
+end
