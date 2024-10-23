@@ -601,13 +601,13 @@ end
 
 Compute the optimal gradient step when applying FISTA to
     minₓ ||id - H⋅wlts⋅x||² + λ||x||₁ 
-when covariance is taken into account. Like the corresponding fista function, this assumes that the noise is Gaussian and independent in the Fourier domain.
+when variance is taken into account. Assumes independent noise in the fourier domain. Also assumes the hessian is in the Fourier domain.
 """
-function compute_step_cov(H_adj_cov_H::Matrix{U}; wlts::Union{Nothing, Vector{T}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
+function compute_step_cov(hessian::Matrix{U}, ivar::Float64; wlts::Union{Nothing, Vector{T}}=nothing) where {T<:WT.OrthoWaveletClass, U<:ComplexF64}
 
     (wlts === nothing) ? M = 8 : M = length(wlts)
 
-    step = 1/(2*M*maximum(real.(fft(H_adj_cov_H))))
+    step = 1/(M*maximum(abs.(hessian)) * ivar)
 
     return step
 end
@@ -615,14 +615,15 @@ end
 
 
 """
-    fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+    fista_cov(H::Matrix{U}, id::Matrix{U}, ficov::Matrix{ComplexF64}, ivar::Float64, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
 
-solve minₓ ||id - H⋅wlts⋅x||² + λ||x||₁ while taking into account some inverse covariance matrix icov using FISTA algorithm.
-This function assumes that the noise is both Gaussian, and independent in the Fourier domain.
+solve minₓ ||id - H⋅wlts⋅x||² + λ||x||₁ using FISTA algorithm.
+Takes into account some inverse variance weighting in the fourier domain, assuming that the noise is independent.
 
 - id : high frequency dirty image
-- icov : inverse covariance matri
+- ficov : variance weighting in the fourier domain
+- ivar : inverse variance
 - n_iter : number of iterations
 - η : gradient step. If not provided η is computed from ∇f Lipschitz constant
 - ip : low frequency image
@@ -632,7 +633,7 @@ This function assumes that the noise is both Gaussian, and independent in the Fo
 If sky is provided returns (x, mse)
 """
 
-function fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
+function fista_cov(H::Matrix{U}, id::Matrix{U}, ficov::Matrix{ComplexF64}, ivar::Float64, λ::Float64, n_iter::Int; wlts::Union{Nothing, Vector{T}}=nothing, η::Union{Nothing, Float64}=nothing, 
     sky::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
     
     # init
@@ -643,12 +644,16 @@ function fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_
     tₚ = 1
 
     # precomputations
-    H_adj = adj(H)
-    H_adj_icov = imfilter(H_adj, icov)
-    H_adj_icov_H = imfilter(H, H_adj_icov)
-    idicov = imfilter(id, H_adj_icov)
+    fH = fft(ifftshift(H))
+    fid = fft(id)
+
+    fH_adj = conj(fH)
+    fH_adj_icov = fH_adj .* ficov
+    fH_adj_icov_fH = fH_adj_icov .* fH
+    fH_adj_icov_fH_adj = conj(fH_adj_icov_fH)
+    fidicov = fH_adj_icov .* fid
     
-    (η == nothing) && (η = compute_step_cov(H_adj_icov_H; wlts = wlts))
+    (η == nothing) && (η = compute_step_cov(fH_adj_icov_fH .+ fH_adj_icov_fH_adj, ivar; wlts = wlts))
  
     (sky === nothing) || (mse = Float64[])
 
@@ -657,10 +662,11 @@ function fista_cov(H::Matrix{U}, id::Matrix{U}, icov::Matrix{U}, λ::Float64, n_
         # compute gradient
 
         i_ = dwt_decomp_adj(α, wlts)
+        fi_ = fft(i_)
 
-        u = imfilter(i_, H_adj_icov_H) - idicov
+        u = fH_adj_icov_fH .* fi_ + fH_adj_icov_fH_adj .* fi_ - 2 * fidicov
 
-        ∇f = 2*dwt_decomp(u, wlts)
+        ∇f = ivar*dwt_decomp(Float64.(real.(ifft(u))), wlts)
 
         # apply prox
         β = shrink.(α - η*∇f, η*λ)
