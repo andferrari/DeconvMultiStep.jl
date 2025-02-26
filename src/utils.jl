@@ -226,8 +226,7 @@ computes the DWT of img using all the wavelets in wlts
 function dwt_decomp(img::Matrix{U}, wlts::Vector{T}) where {T<:WT.OrthoWaveletClass, U<:Real}
     (nx, ny) = size(img)
     α = zeros(nx, ny, length(wlts))
-    α[:,:,1] = dwt(img, wavelet(wlts[1]))
-    for b in 2:length(wlts)
+    Threads.@threads for b in 1:length(wlts)
         α[:,:,b] = dwt(img, wavelet(wlts[b]))
     end
     return α
@@ -238,11 +237,19 @@ end
 
 computes the adjoint operator of dwt_decomp()
 """
-function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}) where {T<:WT.OrthoWaveletClass, U<:Real}
-    img = idwt(α[:,:,1], wavelet(wlts[1]))
-    for b in 2:length(wlts)
-        img += idwt(α[:,:,b], wavelet(wlts[b]))
+function dwt_decomp_adj(α::Array{U, 3}, wlts::Vector{T}, id::Matrix{U}) where {T<:WT.OrthoWaveletClass, U<:Real}
+    (nx, ny) = size(id)
+    images = zeros(nx, ny, length(wlts))
+    
+    Threads.@threads for b in 1:length(wlts)
+        images[:,:,b] = idwt(α[:,:,b], wavelet(wlts[b]))
     end
+
+    img = images[:,:,1]
+    for b in 2:length(wlts)
+        img += images[:,:,b]
+    end
+
     return img
 end
 
@@ -252,7 +259,7 @@ end
 evalutes cost function
 """
 function cost(x::Array{U}, psf::Matrix{U}, dirty::Matrix{U}, wlts::Vector{T}, λ::Float64; G::Union{Nothing, Filters}=nothing, ip::Union{Nothing, Matrix{U}}=nothing) where {T<:WT.OrthoWaveletClass, U<:Real}
-    i_ = dwt_decomp_adj(x, wlts)
+    i_ = dwt_decomp_adj(x, wlts, dirty)
 
     if G === nothing
         y = norm(dirty - imfilter(i_, psf))^2 + λ * norm(x, 1)
@@ -322,7 +329,7 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
 
         # compute gradient
 
-        i_ = dwt_decomp_adj(α, wlts)
+        i_ = dwt_decomp_adj(α, wlts, id)
 
         if G === nothing
             u = imfilter(i_, H2) - Hid
@@ -342,7 +349,7 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
         tₚ = t
 
         if sky ≠ nothing 
-            push!(mse, norm(sky - dwt_decomp_adj(α, wlts))^2)
+            push!(mse, norm(sky - dwt_decomp_adj(α, wlts, id))^2)
             push!(coeff_dist, norm(α - last_α))
             push!(costs, cost(α, H, id, wlts, λ, G=G, ip=ip))
             last_α = α
@@ -350,7 +357,7 @@ function fista(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; wlts::Unio
 
         next!(p_bar)
     end
-    (sky == nothing) ? (return dwt_decomp_adj(α, wlts)) : (return dwt_decomp_adj(α, wlts), coeff_dist, mse, costs) 
+    (sky == nothing) ? (return dwt_decomp_adj(α, wlts, id)) : (return dwt_decomp_adj(α, wlts, id), coeff_dist, mse, costs) 
 end
 
 # compute step
@@ -383,13 +390,13 @@ function compute_step_(H::Matrix{U};  wlts::Union{Nothing, Vector{T}}=nothing, G
 
     for n in 1:n_iter
 
-        u = imfilter(dwt_decomp_adj(α, wlts), H2)      
+        u = imfilter(dwt_decomp_adj(α, wlts, H), H2)      
         α_ = dwt_decomp(u, wlts)
         α = α_/norm(α_)
 
     end
 
-    u = imfilter(dwt_decomp_adj(α, wlts), H2)      
+    u = imfilter(dwt_decomp_adj(α, wlts, H), H2)      
     α_ = dwt_decomp(u, wlts)
 
     1/(2*dot(α,  α_))
