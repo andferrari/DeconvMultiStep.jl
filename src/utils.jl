@@ -570,6 +570,8 @@ function fista_iuwt(H::Matrix{U}, id::Matrix{U}, λ::Float64, n_iter::Int; η::U
     p_bar = Progress(n_iter; enabled=show_progress)
     for k in 1:n_iter
 
+        GC.gc()
+
         # compute gradient
 
         i_ = iuwt_recomp(α, scale_offset)
